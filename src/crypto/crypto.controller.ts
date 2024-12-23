@@ -12,13 +12,29 @@ export class CryptoController {
   }
 
   @Get('analysis')
-  async getAnalysis(@Query('isPotential') isPotential?: string) {
+  async getAnalysis(
+    @Query('isPotential') isPotential?: string,
+    @Query('minScore') minScore?: string,
+  ) {
     const analyzedData = await this.cryptoService.fetchAndAnalyzeCryptos();
 
+    let filteredData = analyzedData;
+
     if (isPotential === 'true') {
-      return analyzedData.filter((crypto) => crypto.potentialGain.isPotential);
+      filteredData = filteredData.filter(
+        (crypto) => crypto.potentialGain.isPotential,
+      );
     }
 
-    return analyzedData;
+    if (minScore) {
+      const scoreThreshold = parseInt(minScore);
+      if (!isNaN(scoreThreshold)) {
+        filteredData = filteredData.filter(
+          (crypto) => crypto.potentialGain.score >= scoreThreshold,
+        );
+      }
+    }
+
+    return filteredData;
   }
 }
