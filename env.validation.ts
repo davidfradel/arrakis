@@ -3,7 +3,7 @@ import { IsString, validateSync } from 'class-validator';
 
 class EnvironmentVariables {
   @IsString()
-  COINMARKETCAP_API_KEY!: string;
+  CMC_API_KEY!: string;
 }
 
 export function validate(config: Record<string, unknown>) {

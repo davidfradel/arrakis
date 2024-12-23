@@ -1,13 +1,24 @@
-import { Controller, Get } from '@nestjs/common';
-import { CoinMarketCapService } from '../coinmarketcap/coinmarketcap.service';
+import { Controller, Get, Query } from '@nestjs/common';
+import { CryptoService } from './crypto.service';
 
 @Controller('crypto')
 export class CryptoController {
-  constructor(private readonly coinMarketCapService: CoinMarketCapService) {}
+  constructor(private readonly cryptoService: CryptoService) {}
 
   @Get()
   async getCryptocurrencies() {
-    const response = await this.coinMarketCapService.getCryptocurrencies();
-    return response.data;
+    const cryptoData = await this.cryptoService.fetchCryptoData();
+    return cryptoData;
+  }
+
+  @Get('analysis')
+  async getAnalysis(@Query('isPotential') isPotential?: string) {
+    const analyzedData = await this.cryptoService.fetchAndAnalyzeCryptos();
+
+    if (isPotential === 'true') {
+      return analyzedData.filter((crypto) => crypto.potentialGain.isPotential);
+    }
+
+    return analyzedData;
   }
 }

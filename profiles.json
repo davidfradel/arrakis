@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Aggressive Investor",
+    "investmentHorizon": "short",
+    "riskTolerance": "high",
+    "targetReturn": 15
+  },
+  {
+    "name": "Conservative Investor",
+    "investmentHorizon": "long",
+    "riskTolerance": "low",
+    "targetReturn": 5
+  }
+]
