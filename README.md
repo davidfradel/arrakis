@@ -31,7 +31,7 @@ Arrakis is a sophisticated cryptocurrency analysis bot built with NestJS that he
 
 - Node.js (v16 or higher)
 - npm or yarn
-- CoinMarketCap API key
+- CoinMarketCap API key (v1 API access required)
 
 ### Installation
 
@@ -48,6 +48,7 @@ npm install
 
 3. Create a `.env` file in the root directory:
 ```env
+# Get your API key from https://pro.coinmarketcap.com
 CMC_API_KEY=your_coinmarketcap_api_key_here
 ```
 
@@ -56,13 +57,15 @@ CMC_API_KEY=your_coinmarketcap_api_key_here
 npm run start:dev
 ```
 
+The server will start on http://localhost:3000 by default.
+
 ## API Endpoints
 
 ### GET /crypto
 Returns raw data for the top 200 cryptocurrencies.
 
 ### GET /crypto/analysis
-Returns analyzed cryptocurrency data with technical indicators and potential signals.
+Returns analyzed cryptocurrency data with technical indicators and potential signals. The data is fetched from CoinMarketCap's v1 API.
 
 Query Parameters:
 - `isPotential=true`: Filter to show only cryptocurrencies with high potential based on analysis

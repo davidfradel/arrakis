@@ -7,21 +7,73 @@ interface MACDResult {
   histogram: number;
 }
 
+interface AnalysisConfig {
+  timeframe: 'short' | 'medium' | 'long'; // short: days, medium: weeks, long: months
+  minDataPoints: number; // Minimum number of data points required
+  periods: {
+    rsi: number;
+    macdFast: number;
+    macdSlow: number;
+    macdSignal: number;
+  };
+}
+
 @Injectable()
 export class CryptoAnalysisService {
   private readonly logger = new Logger(CryptoAnalysisService.name);
+  private config: AnalysisConfig;
+
+  constructor() {
+    // Default configuration
+    this.config = {
+      timeframe: 'medium',
+      minDataPoints: 90, // 3 months of daily data
+      periods: {
+        rsi: 14,
+        macdFast: 12,
+        macdSlow: 26,
+        macdSignal: 9,
+      },
+    };
+  }
+
+  getTimeframe(): 'short' | 'medium' | 'long' {
+    return this.config.timeframe;
+  }
+
+  setAnalysisConfig(newConfig: Partial<AnalysisConfig>) {
+    this.config = { ...this.config, ...newConfig };
+
+    // Adjust periods based on timeframe
+    if (this.config.timeframe === 'short') {
+      this.config.minDataPoints = 30; // 1 month
+      this.config.periods = {
+        rsi: 7,
+        macdFast: 6,
+        macdSlow: 13,
+        macdSignal: 4,
+      };
+    } else if (this.config.timeframe === 'long') {
+      this.config.minDataPoints = 365; // 1 year
+      this.config.periods = {
+        rsi: 21,
+        macdFast: 24,
+        macdSlow: 52,
+        macdSignal: 18,
+      };
+    }
+  }
 
   async analyzeCryptos(cryptos: any[]) {
     return Promise.all(
       cryptos.map(async (crypto) => {
-        // Use data from the last 24h/7d for analysis
-        const priceHistory = [
+        const priceHistory = crypto.historicalData?.prices || [
           crypto.quote.USD.price /
             (1 + crypto.quote.USD.percent_change_24h / 100),
           crypto.quote.USD.price,
         ];
 
-        const volumeHistory = [
+        const volumeHistory = crypto.historicalData?.volumes || [
           crypto.quote.USD.volume_24h,
           crypto.quote.USD.volume_24h *
             (1 + crypto.quote.USD.volume_change_24h / 100),
@@ -32,6 +84,11 @@ export class CryptoAnalysisService {
           macd: this.calculateMACD(priceHistory),
           volumeAnalysis: this.analyzeVolume(volumeHistory),
           priceAction: this.analyzePriceAction(priceHistory),
+          dataQuality: {
+            hasHistoricalData: !!crypto.historicalData,
+            dataPoints: priceHistory.length,
+            isReliable: priceHistory.length >= this.config.minDataPoints,
+          },
         };
 
         return {
@@ -44,12 +101,12 @@ export class CryptoAnalysisService {
   }
 
   private calculateRSI(prices: number[]): number {
-    if (prices.length < 14) {
+    if (prices.length < this.config.periods.rsi) {
       return 50;
     }
     const rsiResult = technicalIndicators.RSI.calculate({
       values: prices,
-      period: 14,
+      period: this.config.periods.rsi,
     });
 
     if (!rsiResult || rsiResult.length === 0) {
@@ -60,14 +117,14 @@ export class CryptoAnalysisService {
   }
 
   private calculateMACD(prices: number[]): MACDResult {
-    if (prices.length < 26) {
+    if (prices.length < this.config.periods.macdSlow) {
       return { MACD: 0, signal: 0, histogram: 0 };
     }
     const macdResult = technicalIndicators.MACD.calculate({
       values: prices,
-      fastPeriod: 12,
-      slowPeriod: 26,
-      signalPeriod: 9,
+      fastPeriod: this.config.periods.macdFast,
+      slowPeriod: this.config.periods.macdSlow,
+      signalPeriod: this.config.periods.macdSignal,
       SimpleMAOscillator: false,
       SimpleMASignal: false,
     }) as MACDResult[];
@@ -112,42 +169,74 @@ export class CryptoAnalysisService {
   }
 
   private evaluatePotential(analysis: any, crypto: any) {
+    // If we don't have enough historical data, reduce confidence
+    const dataQualityMultiplier = !analysis.dataQuality.isReliable ? 0.7 : 1;
+
     let score = 0;
+    const timeframeMultiplier =
+      this.config.timeframe === 'short'
+        ? 1.5
+        : this.config.timeframe === 'medium'
+          ? 1
+          : 0.7;
 
-    // RSI Analysis (less strict on oversold condition)
-    if (analysis.rsi < 35) score += 2;
-    else if (analysis.rsi < 45) score += 1;
+    // Apply the two multipliers
+    const finalMultiplier = timeframeMultiplier * dataQualityMultiplier;
 
-    // MACD Analysis (added less strict condition)
-    if (analysis.macd.histogram > 0 && analysis.macd.signal > 0) score += 2;
-    else if (analysis.macd.histogram > 0) score += 1; // Positive trend even if signal not yet positive
+    // RSI Analysis (adjusted based on timeframe)
+    const rsiThreshold =
+      this.config.timeframe === 'short'
+        ? 30
+        : this.config.timeframe === 'medium'
+          ? 35
+          : 40;
+    if (analysis.rsi < rsiThreshold) score += 2 * finalMultiplier;
+    else if (analysis.rsi < rsiThreshold + 10) score += 1 * finalMultiplier;
 
-    // Volume Analysis (lower threshold for volume ratio)
-    if (analysis.volumeAnalysis.volumeRatio > 1.3) score += 2;
-    else if (analysis.volumeAnalysis.volumeRatio > 1.1) score += 1;
+    // MACD Analysis
+    if (analysis.macd.histogram > 0 && analysis.macd.signal > 0)
+      score += 2 * finalMultiplier;
+    else if (analysis.macd.histogram > 0) score += 1 * finalMultiplier;
+
+    // Volume Analysis (adjusted thresholds based on timeframe)
+    const volumeRatioThreshold =
+      this.config.timeframe === 'short'
+        ? 1.5
+        : this.config.timeframe === 'medium'
+          ? 1.3
+          : 1.2;
+    if (analysis.volumeAnalysis.volumeRatio > volumeRatioThreshold)
+      score += 2 * finalMultiplier;
+    else if (analysis.volumeAnalysis.volumeRatio > volumeRatioThreshold - 0.2)
+      score += 1 * finalMultiplier;
 
     // Price Action Analysis
     if (analysis.priceAction.trend.isUptrend) {
-      if (analysis.priceAction.trend.strength > 3) score += 2;
-      else score += 1;
+      if (analysis.priceAction.trend.strength > 3) score += 2 * finalMultiplier;
+      else score += 1 * finalMultiplier;
     }
 
     // Market Cap Analysis (expanded thresholds)
     const marketCap = crypto.quote.USD.market_cap;
     if (marketCap < 500000000)
-      score += 2; // Less than 500M
-    else if (marketCap < 1000000000) score += 1; // Less than 1B
+      score += 2 * finalMultiplier; // Less than 500M
+    else if (marketCap < 1000000000) score += 1 * finalMultiplier; // Less than 1B
 
     // Additional criteria on recent price change
     const priceChange24h = crypto.quote.USD.percent_change_24h;
     if (priceChange24h > 0 && priceChange24h < 15)
-      score += 1; // Moderate increase
-    else if (priceChange24h < 0 && priceChange24h > -10) score += 1; // Limited decrease
+      score += 1 * finalMultiplier; // Moderate increase
+    else if (priceChange24h < 0 && priceChange24h > -10)
+      score += 1 * finalMultiplier; // Limited decrease
 
     return {
       score,
-      isPotential: score >= 5, // Threshold lowered from 6 to 5
+      isPotential: score >= 5 * finalMultiplier,
       reasons: this.generateReasons(analysis, crypto),
+      reliability: {
+        dataQuality: analysis.dataQuality,
+        confidence: dataQualityMultiplier * 100,
+      },
     };
   }
 
@@ -191,6 +280,13 @@ export class CryptoAnalysisService {
     } else if (priceChange24h < 0 && priceChange24h > -10) {
       reasons.push(
         `Limited price decrease: ${priceChange24h.toFixed(1)}% in 24h`,
+      );
+    }
+
+    // Add a note about data quality
+    if (!analysis.dataQuality.isReliable) {
+      reasons.push(
+        `Limited historical data: ${analysis.dataQuality.dataPoints} points available`,
       );
     }
 
